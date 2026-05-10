@@ -11,7 +11,7 @@ st.set_page_config(
 )
 
 # ==================================================
-# ESTILOS (MESH)
+# ESTILOS DE MESH
 # ==================================================
 st.markdown("""
 <style>
@@ -59,6 +59,7 @@ st.markdown("""
         font-weight: bold;
         color: #000;
         width: 100%;
+        margin-top: 0.5rem;
         cursor: pointer;
     }
     .listen-active { background: linear-gradient(135deg, #ff4444, #aa0000); animation: pulse 1s infinite; }
@@ -66,17 +67,18 @@ st.markdown("""
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    .status-ok { color: #00ff88; font-size: 0.7rem; text-align: center; margin-top: 0.5rem; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==================================================
-# CONFIGURACIÓN GROQ (DESDE SECRETS)
+# CONFIGURACIÓN: SOLO GROQ (sin Gemini)
 # ==================================================
 try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 except Exception:
     st.error("⚠️ No se encontró la clave GROQ_API_KEY en los secretos")
-    st.info("Asegúrate de tener .streamlit/secrets.toml con: GROQ_API_KEY = 'tu_key'")
+    st.info("Crea el archivo .streamlit/secrets.toml con: GROQ_API_KEY = 'tu_key'")
     st.stop()
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -93,7 +95,10 @@ def call_groq(user_message):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     payload = {
         "model": GROQ_MODEL,
-        "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_message}],
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message}
+        ],
         "temperature": 0.75,
         "max_tokens": 600
     }
@@ -101,24 +106,27 @@ def call_groq(user_message):
         response = requests.post(GROQ_URL, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
-        return f"⚠️ Error {response.status_code}: Groq no responde"
+        else:
+            return f"⚠️ Groq responde con error {response.status_code}. Teje de nuevo."
     except Exception as e:
         return f"🔌 Red inestable: {str(e)[:80]}"
 
 # ==================================================
-# MEMORIA
+# MEMORIA DE CHAT
 # ==================================================
 if "messages" not in st.session_state:
-    st.session_state.messages = []
+    st.session_state.messages = [
+        {"role": "assistant", "content": "🕸️ Hola, soy MESH, el Tejedor de la Red. Puedo escucharte o leerte. ¿Sobre qué hilos teje tu pregunta?"}
+    ]
 
 # ==================================================
 # CABECERA
 # ==================================================
 st.markdown('<div class="hero-title">🕸️ MESH</div>', unsafe_allow_html=True)
-st.markdown('<p style="text-align:center; color:#7ab8c8;">tejedor de la red | con voz</p>', unsafe_allow_html=True)
+st.markdown('<p style="text-align:center; color:#7ab8c8;">tejedor de la red | Groq activo</p>', unsafe_allow_html=True)
 
 # ==================================================
-# CHAT
+# MOSTRAR CHAT
 # ==================================================
 for msg in st.session_state.messages[-30:]:
     if msg["role"] == "user":
@@ -127,40 +135,57 @@ for msg in st.session_state.messages[-30:]:
         st.markdown(f'<div class="mesh-bubble">{msg["content"]}</div><div style="clear:both"></div>', unsafe_allow_html=True)
 
 # ==================================================
-# VOZ (STT)
+# BOTÓN DE ESCUCHA (STT)
 # ==================================================
 st.markdown("""
 <div>
     <button id="stt-button" class="voice-btn">🎤 ESCUCHAR (toca y habla)</button>
 </div>
-<div id="stt-status" style="display:none; color:#ff8888; text-align:center;">🎙️ Escuchando...</div>
+<div id="stt-status" style="display:none; text-align:center; color:#ff8888;">🎙️ Escuchando... habla claro</div>
+
 <script>
 const sttButton = document.getElementById('stt-button');
 const statusDiv = document.getElementById('stt-status');
+
 if ('webkitSpeechRecognition' in window) {
-    const recognition = new (webkitSpeechRecognition)();
+    const recognition = new webkitSpeechRecognition();
     recognition.lang = 'es-ES';
-    recognition.onstart = () => { sttButton.classList.add('listen-active'); statusDiv.style.display = 'block'; };
-    recognition.onend = () => { sttButton.classList.remove('listen-active'); statusDiv.style.display = 'none'; };
-    recognition.onresult = (e) => {
-        const text = e.results[0][0].transcript;
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    
+    recognition.onstart = function() {
+        sttButton.classList.add('listen-active');
+        statusDiv.style.display = 'block';
+    };
+    recognition.onend = function() {
+        sttButton.classList.remove('listen-active');
+        statusDiv.style.display = 'none';
+    };
+    recognition.onresult = function(event) {
+        const text = event.results[0][0].transcript;
         window.location.href = window.location.href.split('?')[0] + '?stt_text=' + encodeURIComponent(text);
     };
-    sttButton.onclick = () => recognition.start();
+    recognition.onerror = function() {
+        statusDiv.innerHTML = '⚠️ No entendí, intenta de nuevo';
+    };
+    sttButton.onclick = function() {
+        recognition.start();
+    };
 } else {
     sttButton.innerHTML = '🎤 VOZ NO SOPORTADA';
+    sttButton.disabled = true;
 }
 </script>
 """, unsafe_allow_html=True)
 
 # ==================================================
-# PROCESAR STT
+# PROCESAR TEXTO DESDE VOZ
 # ==================================================
 params = st.query_params
 if "stt_text" in params:
     user_text = params["stt_text"]
     st.session_state.messages.append({"role": "user", "content": user_text})
-    with st.spinner("Tejiendo..."):
+    with st.spinner("Tejiendo respuesta..."):
         reply = call_groq(user_text)
         st.session_state.messages.append({"role": "assistant", "content": reply})
     st.query_params.clear()
@@ -169,13 +194,18 @@ if "stt_text" in params:
 # ==================================================
 # ENTRADA MANUAL
 # ==================================================
-col1, col2 = st.columns([5,1])
+col1, col2 = st.columns([5, 1])
 with col1:
     user_input = st.text_input("", placeholder="Escribe un mensaje...", label_visibility="collapsed")
 with col2:
     if st.button("ENVIAR") and user_input:
         st.session_state.messages.append({"role": "user", "content": user_input})
-        with st.spinner("Tejiendo..."):
+        with st.spinner("Tejiendo respuesta..."):
             reply = call_groq(user_input)
             st.session_state.messages.append({"role": "assistant", "content": reply})
         st.rerun()
+
+# ==================================================
+# ESTADO
+# ==================================================
+st.markdown('<div class="status-ok">🟢 Groq activo · MESH tejiendo respuestas</div>', unsafe_allow_html=True)
