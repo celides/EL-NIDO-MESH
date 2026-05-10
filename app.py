@@ -8,6 +8,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Estilos CSS
 st.markdown("""
     <style>
         .stTextInput > div > div > input {
@@ -35,15 +36,20 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Verificar la clave (para depuración, luego lo puedes quitar)
-if "GEMINI_API_KEY" not in st.secrets:
+# ==================================================
+# LECTURA DE LA LLAVE DESDE SECRETS
+# ==================================================
+try:
+    API_KEY = st.secrets["GEMINI_API_KEY"]
+    genai.configure(api_key=API_KEY)
+except Exception as e:
     st.error("❌ No se encontró la clave GEMINI_API_KEY en los secretos de Streamlit.")
     st.info("Asegúrate de tener la carpeta .streamlit/ con el archivo secrets.toml")
     st.stop()
 
-API_KEY = st.secrets["GEMINI_API_KEY"]
-genai.configure(api_key=API_KEY)
-
+# ==================================================
+# CONFIGURACIÓN DEL MODELO (MESH)
+# ==================================================
 model = genai.GenerativeModel(
     model_name="gemini-1.5-flash",
     system_instruction=(
@@ -52,19 +58,23 @@ model = genai.GenerativeModel(
     )
 )
 
+# Inicializar historial de mensajes
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "🌐 Hola, soy **MESH, el Tejedor de la Red**. ¿Sobre qué hilos te gustaría conversar hoy?"}
     ]
 
+# Cabecera
 st.markdown("<h1 style='text-align: center;'>🕸️ EL NIDO - MESH</h1>", unsafe_allow_html=True)
 
+# Mostrar mensajes del chat
 for msg in st.session_state.messages:
     if msg["role"] == "user":
         st.markdown(f'<div class="chat-message user-message"><strong>🧑‍💻 TÚ:</strong><br>{msg["content"]}</div>', unsafe_allow_html=True)
     else:
         st.markdown(f'<div class="chat-message assistant-message"><strong>🕸️ MESH:</strong><br>{msg["content"]}</div>', unsafe_allow_html=True)
 
+# Entrada de texto
 with st.container():
     col1, col2 = st.columns([4, 1])
     with col1:
@@ -72,6 +82,7 @@ with st.container():
     with col2:
         send_button = st.button("Enviar")
 
+# Procesar mensaje
 if send_button and user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.spinner("Tejiendo respuesta..."):
