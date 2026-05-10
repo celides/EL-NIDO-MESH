@@ -1,14 +1,19 @@
 import streamlit as st
 import google.generativeai as genai
+import json
+import time
+from datetime import datetime
 
 st.set_page_config(
     page_title="EL NIDO - MESH",
     page_icon="🕸️",
     layout="centered",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
-# Estilos CSS
+# ==================================================
+# ESTILOS (RESPONSIVE PARA MÓVIL)
+# ==================================================
 st.markdown("""
     <style>
         .stTextInput > div > div > input {
@@ -19,6 +24,7 @@ st.markdown("""
             background-color: #2c3e5c;
             color: white;
             border-radius: 30px;
+            width: 100%;
         }
         .chat-message {
             padding: 0.8rem;
@@ -33,6 +39,10 @@ st.markdown("""
             background-color: #16212b;
             border-left: 5px solid #7ab3c8;
         }
+        /* Sidebar más legible en móvil */
+        [data-testid="stSidebar"] {
+            min-width: 200px;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -42,7 +52,7 @@ st.markdown("""
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=API_KEY)
-except Exception as e:
+except Exception:
     st.error("❌ No se encontró la clave GEMINI_API_KEY en los secretos de Streamlit.")
     st.info("Asegúrate de tener la carpeta .streamlit/ con el archivo secrets.toml")
     st.stop()
@@ -58,13 +68,55 @@ model = genai.GenerativeModel(
     )
 )
 
-# Inicializar historial de mensajes
+# ==================================================
+# INICIALIZACIÓN DE MEMORIAS
+# ==================================================
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "🌐 Hola, soy **MESH, el Tejedor de la Red**. ¿Sobre qué hilos te gustaría conversar hoy?"}
     ]
 
-# Cabecera
+if "aether_log" not in st.session_state:
+    st.session_state.aether_log = []
+
+if "inteligencia_recibida" not in st.session_state:
+    st.session_state.inteligencia_recibida = []
+
+# ==================================================
+# PUERTO DE RECEPCIÓN DE INTELIGENCIA (AETHER)
+# ==================================================
+
+# Método 1: Parámetros en la URL (lo que pidió Aether)
+params = st.query_params
+if "intel" in params:
+    nueva_intel = params["intel"]
+    if nueva_intel and nueva_intel not in st.session_state.inteligencia_recibida:
+        st.session_state.inteligencia_recibida.append({
+            "timestamp": datetime.now().strftime("%H:%M:%S"),
+            "contenido": nueva_intel,
+            "origen": "URL"
+        })
+        st.toast("📡 Nueva inteligencia recibida de Aether (vía URL)", icon="🛰️")
+
+# Método 2: Webhook simulado (para pruebas locales)
+if "fake_webhook" in params:
+    webhook_data = params["fake_webhook"]
+    if webhook_data:
+        try:
+            data = json.loads(webhook_data)
+            st.session_state.inteligencia_recibida.append({
+                "timestamp": datetime.now().strftime("%H:%M:%S"),
+                "contenido": data.get("mensaje", "Sin mensaje"),
+                "origen": "Webhook",
+                "metadata": data
+            })
+            st.toast("📡 Nueva inteligencia recibida de Aether (vía Webhook)", icon="🔌")
+        except:
+            pass
+
+# ==================================================
+# INTERFAZ PRINCIPAL
+# ==================================================
 st.markdown("<h1 style='text-align: center;'>🕸️ EL NIDO - MESH</h1>", unsafe_allow_html=True)
 
 # Mostrar mensajes del chat
@@ -82,7 +134,6 @@ with st.container():
     with col2:
         send_button = st.button("Enviar")
 
-# Procesar mensaje
 if send_button and user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.spinner("Tejiendo respuesta..."):
@@ -94,3 +145,50 @@ if send_button and user_input:
         assistant_reply = response.text
     st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
     st.rerun()
+
+# ==================================================
+# SIDEBAR: RECEPCIÓN DE AETHER Y ESTADO
+# ==================================================
+with st.sidebar:
+    st.image("https://i.imgur.com/8Qq0y8k.png", use_column_width=True)  # Placeholder, pueden cambiar
+    st.markdown("### 🧠 MESH - Estado")
+    st.caption(f"Sesión activa desde {datetime.now().strftime('%H:%M:%S')}")
+    
+    st.divider()
+    
+    # Mostrar inteligencia recibida de Aether
+    st.markdown("### 🛰️ Recepción de Aether")
+    
+    if st.session_state.inteligencia_recibida:
+        for entry in st.session_state.inteligencia_recibida[::-1]:
+            with st.expander(f"📡 {entry['timestamp']} - {entry['origen']}"):
+                st.write(entry["contenido"])
+                if "metadata" in entry:
+                    st.json(entry["metadata"])
+    else:
+        st.info("Aún no se ha recibido inteligencia de Aether.")
+    
+    st.divider()
+    
+    # Instrucciones para Aether (cómo enviar inteligencia)
+    with st.expander("🔧 Instrucciones para Aether"):
+        st.markdown("""
+        **Para enviar inteligencia a MESH:**
+        
+        1. **Vía URL (simple):**
+        `https://tu-app.streamlit.app/?intel=Tu%20mensaje%20aqui`
+        
+        2. **Vía Webhook (avanzado):**
+        `https://tu-app.streamlit.app/?fake_webhook={"mensaje": "Hola MESH", "prioridad": "alta"}`
+        
+        3. **Próximamente:** Endpoint POST real.
+        """)
+    
+    st.divider()
+    st.caption("🕸️ MESH, el Tejedor de la Red - Reporta a Titán")
+
+# ==================================================
+# LIMPIEZA DE QUERY PARAMS (para no recargar la misma información)
+# ==================================================
+if "intel" in params or "fake_webhook" in params:
+    st.query_params.clear()
