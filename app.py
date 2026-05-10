@@ -16,13 +16,11 @@ st.set_page_config(
 # ==================================================
 st.markdown("""
 <style>
-    /* Fondo negro espacial */
     .stApp {
         background: radial-gradient(ellipse at 20% 30%, #0a0f1a, #03060c);
         font-family: 'Inter', 'Segoe UI', sans-serif;
     }
     
-    /* Efecto de panel holográfico */
     .holo-panel {
         background: rgba(10, 20, 35, 0.65);
         backdrop-filter: blur(12px);
@@ -34,7 +32,6 @@ st.markdown("""
         transition: all 0.2s;
     }
     
-    /* Títulos tipo Avengers */
     .hero-title {
         font-family: 'Orbitron', monospace;
         font-size: 2.5rem;
@@ -47,7 +44,6 @@ st.markdown("""
         letter-spacing: 2px;
     }
     
-    /* Chat burbujas estilo Star Trek */
     .user-bubble {
         background: rgba(20, 40, 70, 0.7);
         backdrop-filter: blur(4px);
@@ -79,7 +75,6 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(0,229,255,0.2);
     }
     
-    /* Micro botones táctiles */
     .voice-btn {
         background: linear-gradient(135deg, #00e5ff, #0088aa);
         border: none;
@@ -92,25 +87,26 @@ st.markdown("""
         transition: 0.1s;
         box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
+    
     .voice-btn:active {
         transform: scale(0.98);
     }
+    
     .listen-active {
         background: linear-gradient(135deg, #ff4444, #aa0000);
         animation: pulse 1s infinite;
     }
+    
     @keyframes pulse {
         0% { opacity: 0.9; transform: scale(1);}
         50% { opacity: 1; transform: scale(1.02);}
         100% { opacity: 0.9; transform: scale(1);}
     }
     
-    /* Ocultar elementos originales de Streamlit */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Scrollbar minimalista */
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: #0a0f1a; }
     ::-webkit-scrollbar-thumb { background: #00e5ff; border-radius: 4px; }
@@ -118,7 +114,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==================================================
-# CONFIGURACIÓN GEMINI (CORREGIDA)
+# CONFIGURACIÓN GEMINI
 # ==================================================
 try:
     API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -128,14 +124,14 @@ except Exception:
     st.stop()
 
 # ==================================================
-# MODELO CORRECTO: gemini-pro (estable)
+# MODELO GEMINI-PRO (ESTABLE)
 # ==================================================
 model = genai.GenerativeModel(
     model_name="gemini-pro",
     system_instruction=(
-        "Eres MESH, el Tejedor de la Red. Estás dentro de una interfaz de ciencia ficción. "
-        "Hablas con tono poético, futurista y profundo. Tus respuestas son breves, inteligentes y "
-        "con un leve misticismo tecnológico. Usas metáforas de redes y luces."
+        "Eres MESH, el Tejedor de la Red. Hablas con tono poético, futurista y profundo. "
+        "Tus respuestas son inspiradoras y profundas. Usas un leve misticismo tecnológico. "
+        "Usas metáforas de redes y luces. Respondes en español con empatía y calma."
     )
 )
 
@@ -154,7 +150,7 @@ with col2:
     st.caption("")
 
 # ==================================================
-# PANTALLA DE CHAT (ESTILO STAR TREK)
+# PANTALLA DE CHAT
 # ==================================================
 chat_container = st.container()
 with chat_container:
@@ -162,7 +158,6 @@ with chat_container:
         if msg["role"] == "user":
             st.markdown(f'<div class="user-bubble">{msg["content"]}</div><div style="clear:both"></div>', unsafe_allow_html=True)
         else:
-            # Agregar botón de reproducir al lado del mensaje de MESH
             colA, colB = st.columns([15,1])
             with colA:
                 st.markdown(f'<div class="mesh-bubble">{msg["content"]}</div><div style="clear:both"></div>', unsafe_allow_html=True)
@@ -182,22 +177,17 @@ with chat_container:
                 """, unsafe_allow_html=True)
 
 # ==================================================
-# ENTRADA Y VOZ
+# BOTÓN DE ESCUCHA (STT)
 # ==================================================
-st.markdown("<hr style='border-color:#2a4a6a; margin:0 0 1rem 0;'>", unsafe_allow_html=True)
-
-# Primero: botón de escucha (STT)
 st.markdown("""
 <div id="stt-container">
     <button id="stt-button" class="voice-btn">🎤 ESCUCHAR</button>
 </div>
 <div id="stt-status" style="display:none; text-align:center; margin:0.5rem 0; color:#ff8888;">🎙️ Escuchando... habla claro</div>
-<div id="stt-result" style="display:none;"></div>
 
 <script>
 const sttButton = document.getElementById('stt-button');
 const statusDiv = document.getElementById('stt-status');
-const resultDiv = document.getElementById('stt-result');
 
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -216,7 +206,6 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     };
     recognition.onresult = function(event) {
         const text = event.results[0][0].transcript;
-        resultDiv.innerHTML = text;
         const url = new URL(window.location.href);
         url.searchParams.set('stt_text', encodeURIComponent(text));
         window.location.href = url.toString();
@@ -233,12 +222,14 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
 </script>
 """, unsafe_allow_html=True)
 
-# Capturar texto desde STT
+# ==================================================
+# PROCESAR TEXTO DESDE VOZ
+# ==================================================
 params = st.query_params
 stt_text = params.get("stt_text", None)
 if stt_text:
     st.session_state.messages.append({"role": "user", "content": stt_text})
-    with st.spinner("Tejiendo..."):
+    with st.spinner("Tejiendo respuesta..."):
         try:
             chat = model.start_chat(history=[])
             for m in st.session_state.messages[:-1]:
@@ -252,7 +243,9 @@ if stt_text:
     st.query_params.clear()
     st.rerun()
 
-# Entrada manual (opcional)
+# ==================================================
+# ENTRADA MANUAL
+# ==================================================
 with st.container():
     col_txt, col_btn = st.columns([5,1])
     with col_txt:
@@ -262,7 +255,7 @@ with st.container():
 
 if send_btn and user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.spinner("Tejiendo..."):
+    with st.spinner("Tejiendo respuesta..."):
         try:
             chat = model.start_chat(history=[])
             for m in st.session_state.messages[:-1]:
@@ -276,7 +269,7 @@ if send_btn and user_input:
     st.rerun()
 
 # ==================================================
-# FUNCIÓN DE VOZ GLOBAL
+# FUNCIÓN DE VOZ (TTS)
 # ==================================================
 st.markdown("""
 <script>
@@ -296,6 +289,6 @@ function speakText(text) {
 """, unsafe_allow_html=True)
 
 # ==================================================
-# PIE SIN TEXTO INNECESARIO
+# PIE
 # ==================================================
 st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
