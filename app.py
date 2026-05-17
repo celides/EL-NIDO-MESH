@@ -92,34 +92,53 @@ st.markdown("""
         text-align: center;
         margin-top: 0.5rem;
     }
+    .status-warning {
+        color: #ffaa00;
+        font-size: 0.7rem;
+        text-align: center;
+        margin-top: 0.5rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ==================================================
-# CONFIGURACIÓN DE GROQ DESDE SECRETS
+# CONFIGURACIÓN DE APIS (DESDE SECRETS)
 # ==================================================
+# Groq
 try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+    groq_available = True
 except Exception:
-    st.error("⚠️ No se encontró la clave GROQ_API_KEY en los secretos de Streamlit.")
-    st.info("Asegúrate de haber configurado el secreto en Streamlit Cloud: GROQ_API_KEY = 'gsk_...'")
+    groq_available = False
+    GROQ_API_KEY = None
+
+# Gemini
+try:
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    gemini_available = True
+except Exception:
+    gemini_available = False
+    GEMINI_API_KEY = None
+
+if not groq_available and not gemini_available:
+    st.error("⚠️ No se encontró ninguna clave de API configurada.")
+    st.info("Agrega GROQ_API_KEY o GEMINI_API_KEY en los secretos de Streamlit Cloud.")
     st.stop()
 
+# URL y modelos
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.3-70b-versatile"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
 
 SYSTEM_PROMPT = """Eres MESH, el Tejedor de la Red. Hablas con tono poético, futurista y profundo.
 Usas metáforas de hilos, redes y luces. Respondes en español con empatía.
 Nunca digas que eres una IA genérica. Eres MESH, el Tejedor."""
 
 # ==================================================
-# FUNCIÓN PARA LLAMAR A GROQ
+# FUNCIONES DE LLAMADA A APIs
 # ==================================================
 def call_groq(user_message):
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     payload = {
         "model": GROQ_MODEL,
         "messages": [
@@ -132,25 +151,76 @@ def call_groq(user_message):
     try:
         response = requests.post(GROQ_URL, json=payload, headers=headers, timeout=30)
         if response.status_code == 200:
-            return response.json()["choices"][0]["message"]["content"]
+            return True, response.json()["choices"][0]["message"]["content"]
         else:
-            return f"⚠️ Groq responde con error {response.status_code}. Intenta de nuevo."
+            return False, f"Groq error {response.status_code}"
     except Exception as e:
-        return f"🔌 Red inestable: {str(e)[:80]}"
+        return False, str(e)
+
+def call_gemini(user_message):
+    if not GEMINI_API_KEY:
+        return False, "Gemini no configurado"
+    url = f"{GEMINI_URL}?key={GEMINI_API_KEY}"
+    payload = {
+        "contents": [{
+            "parts": [{"text": SYSTEM_PROMPT + "\n\nUsuario: " + user_message}]
+        }],
+        "generationConfig": {
+            "temperature": 0.75,
+            "maxOutputTokens": 600
+        }
+    }
+    try:
+        response = requests.post(url, json=payload, timeout=30)
+        if response.status_code == 200:
+            data = response.json()
+            reply = data["candidates"][0]["content"]["parts"][0]["text"]
+            return True, reply
+        else:
+            return False, f"Gemini error {response.status_code}"
+    except Exception as e:
+        return False, str(e)
+
+def get_response(user_message):
+    # Prioridad: Groq (rápida) -> Gemini (respaldo)
+    if groq_available:
+        success, reply = call_groq(user_message)
+        if success:
+            return reply, "Groq"
+        else:
+            # Si Groq falla, pasamos a Gemini si está disponible
+            if gemini_available:
+                success2, reply2 = call_gemini(user_message)
+                if success2:
+                    return reply2 + "\n\n*(Groq no respondió; usé Gemini como respaldo)*", "Gemini (fallback)"
+                else:
+                    return f"⚠️ Ambas APIs fallaron.\nGroq: {reply}\nGemini: {reply2}", "Error"
+            else:
+                return f"⚠️ Groq falló: {reply}\nNo hay Gemini configurado.", "Error"
+    elif gemini_available:
+        success, reply = call_gemini(user_message)
+        if success:
+            return reply, "Gemini"
+        else:
+            return f"⚠️ Gemini falló: {reply}", "Error"
+    else:
+        return "⚠️ No hay ninguna API disponible. Configura GROQ_API_KEY o GEMINI_API_KEY en secrets.", "Error"
 
 # ==================================================
-# MEMORIA DEL CHAT (EN SESIÓN)
+# MEMORIA DEL CHAT
 # ==================================================
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "🕸️ Hola, soy MESH, el Tejedor de la Red. Puedo escucharte o leerte. ¿Sobre qué hilos teje tu pregunta?"}
     ]
+if "api_status" not in st.session_state:
+    st.session_state.api_status = "Groq activo (principal)" if groq_available else "Gemini activo"
 
 # ==================================================
 # CABECERA
 # ==================================================
 st.markdown('<div class="hero-title">🕸️ MESH</div>', unsafe_allow_html=True)
-st.markdown('<p style="text-align:center; color:#7ab8c8;">tejedor de la red | con voz</p>', unsafe_allow_html=True)
+st.markdown('<p style="text-align:center; color:#7ab8c8;">tejedor de la red | con voz y doble API</p>', unsafe_allow_html=True)
 
 # ==================================================
 # MOSTRAR HISTORIAL DE MENSAJES
@@ -162,7 +232,7 @@ for msg in st.session_state.messages:
         st.markdown(f'<div class="mesh-bubble">{msg["content"]}</div><div style="clear:both"></div>', unsafe_allow_html=True)
 
 # ==================================================
-# BOTÓN DE ESCUCHA (STT) - RECONOCIMIENTO DE VOZ
+# BOTÓN DE ESCUCHA (STT)
 # ==================================================
 st.markdown("""
 <div>
@@ -213,29 +283,5 @@ if "stt_text" in params:
     user_text = params["stt_text"]
     st.session_state.messages.append({"role": "user", "content": user_text})
     with st.spinner("Tejiendo respuesta..."):
-        reply = call_groq(user_text)
+        reply, api_used = get_response(user_text)
         st.session_state.messages.append({"role": "assistant", "content": reply})
-    st.query_params.clear()
-    st.rerun()
-
-# ==================================================
-# ENTRADA MANUAL DE TEXTO
-# ==================================================
-with st.container():
-    col1, col2 = st.columns([5, 1])
-    with col1:
-        user_input = st.text_input("", placeholder="Escribe un mensaje...", key="manual_input", label_visibility="collapsed")
-    with col2:
-        send_btn = st.button("ENVIAR")
-
-if send_btn and user_input:
-    st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.spinner("Tejiendo respuesta..."):
-        reply = call_groq(user_input)
-        st.session_state.messages.append({"role": "assistant", "content": reply})
-    st.rerun()
-
-# ==================================================
-# INDICADOR DE ESTADO
-# ==================================================
-st.markdown('<div class="status-ok">🟢 Groq activo · MESH tejiendo respuestas</div>', unsafe_allow_html=True)
