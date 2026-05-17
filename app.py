@@ -3,6 +3,9 @@ import requests
 import json
 from datetime import datetime
 
+# ==================================================
+# CONFIGURACIÓN DE LA PÁGINA
+# ==================================================
 st.set_page_config(
     page_title="MESH | Tejedor de la Red",
     page_icon="🕸️",
@@ -11,11 +14,14 @@ st.set_page_config(
 )
 
 # ==================================================
-# ESTILOS DE MESH
+# ESTILOS CSS (DISEÑO CIENCIA FICCIÓN)
 # ==================================================
 st.markdown("""
 <style>
-    .stApp { background: radial-gradient(ellipse at 20% 30%, #0a0f1a, #03060c); }
+    .stApp {
+        background: radial-gradient(ellipse at 20% 30%, #0a0f1a, #03060c);
+        font-family: 'Inter', 'Segoe UI', sans-serif;
+    }
     .hero-title {
         font-family: 'Orbitron', monospace;
         font-size: 2.5rem;
@@ -28,6 +34,7 @@ st.markdown("""
     }
     .user-bubble {
         background: rgba(20, 40, 70, 0.7);
+        backdrop-filter: blur(4px);
         border: 1px solid #2a6a9a;
         border-radius: 24px 24px 8px 24px;
         padding: 0.8rem 1.2rem;
@@ -40,6 +47,7 @@ st.markdown("""
     }
     .mesh-bubble {
         background: rgba(10, 20, 30, 0.8);
+        backdrop-filter: blur(4px);
         border: 1px solid #00e5ff;
         border-radius: 24px 24px 24px 8px;
         padding: 0.8rem 1.2rem;
@@ -61,24 +69,40 @@ st.markdown("""
         width: 100%;
         margin-top: 0.5rem;
         cursor: pointer;
+        transition: all 0.2s;
     }
-    .listen-active { background: linear-gradient(135deg, #ff4444, #aa0000); animation: pulse 1s infinite; }
-    @keyframes pulse { 0% { opacity: 0.9; } 50% { opacity: 1; } 100% { opacity: 0.9; } }
+    .voice-btn:active {
+        transform: scale(0.98);
+    }
+    .listen-active {
+        background: linear-gradient(135deg, #ff4444, #aa0000);
+        animation: pulseMic 1s infinite;
+    }
+    @keyframes pulseMic {
+        0% { transform: scale(1); opacity: 0.9; }
+        50% { transform: scale(1.02); opacity: 1; }
+        100% { transform: scale(1); opacity: 0.9; }
+    }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
-    .status-ok { color: #00ff88; font-size: 0.7rem; text-align: center; margin-top: 0.5rem; }
+    .status-ok {
+        color: #00ff88;
+        font-size: 0.7rem;
+        text-align: center;
+        margin-top: 0.5rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ==================================================
-# CONFIGURACIÓN: SOLO GROQ (sin Gemini)
+# CONFIGURACIÓN DE GROQ DESDE SECRETS
 # ==================================================
 try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 except Exception:
-    st.error("⚠️ No se encontró la clave GROQ_API_KEY en los secretos")
-    st.info("Crea el archivo .streamlit/secrets.toml con: GROQ_API_KEY = 'tu_key'")
+    st.error("⚠️ No se encontró la clave GROQ_API_KEY en los secretos de Streamlit.")
+    st.info("Asegúrate de haber configurado el secreto en Streamlit Cloud: GROQ_API_KEY = 'gsk_...'")
     st.stop()
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -89,10 +113,13 @@ Usas metáforas de hilos, redes y luces. Respondes en español con empatía.
 Nunca digas que eres una IA genérica. Eres MESH, el Tejedor."""
 
 # ==================================================
-# FUNCIÓN GROQ
+# FUNCIÓN PARA LLAMAR A GROQ
 # ==================================================
 def call_groq(user_message):
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
     payload = {
         "model": GROQ_MODEL,
         "messages": [
@@ -107,12 +134,12 @@ def call_groq(user_message):
         if response.status_code == 200:
             return response.json()["choices"][0]["message"]["content"]
         else:
-            return f"⚠️ Groq responde con error {response.status_code}. Teje de nuevo."
+            return f"⚠️ Groq responde con error {response.status_code}. Intenta de nuevo."
     except Exception as e:
         return f"🔌 Red inestable: {str(e)[:80]}"
 
 # ==================================================
-# MEMORIA DE CHAT
+# MEMORIA DEL CHAT (EN SESIÓN)
 # ==================================================
 if "messages" not in st.session_state:
     st.session_state.messages = [
@@ -123,19 +150,19 @@ if "messages" not in st.session_state:
 # CABECERA
 # ==================================================
 st.markdown('<div class="hero-title">🕸️ MESH</div>', unsafe_allow_html=True)
-st.markdown('<p style="text-align:center; color:#7ab8c8;">tejedor de la red | Groq activo</p>', unsafe_allow_html=True)
+st.markdown('<p style="text-align:center; color:#7ab8c8;">tejedor de la red | con voz</p>', unsafe_allow_html=True)
 
 # ==================================================
-# MOSTRAR CHAT
+# MOSTRAR HISTORIAL DE MENSAJES
 # ==================================================
-for msg in st.session_state.messages[-30:]:
+for msg in st.session_state.messages:
     if msg["role"] == "user":
         st.markdown(f'<div class="user-bubble">{msg["content"]}</div><div style="clear:both"></div>', unsafe_allow_html=True)
     else:
         st.markdown(f'<div class="mesh-bubble">{msg["content"]}</div><div style="clear:both"></div>', unsafe_allow_html=True)
 
 # ==================================================
-# BOTÓN DE ESCUCHA (STT)
+# BOTÓN DE ESCUCHA (STT) - RECONOCIMIENTO DE VOZ
 # ==================================================
 st.markdown("""
 <div>
@@ -172,14 +199,14 @@ if ('webkitSpeechRecognition' in window) {
         recognition.start();
     };
 } else {
-    sttButton.innerHTML = '🎤 VOZ NO SOPORTADA';
+    sttButton.innerHTML = '🎤 VOZ NO SOPORTADA (usa Chrome)';
     sttButton.disabled = true;
 }
 </script>
 """, unsafe_allow_html=True)
 
 # ==================================================
-# PROCESAR TEXTO DESDE VOZ
+# PROCESAR TEXTO RECONOCIDO POR VOZ
 # ==================================================
 params = st.query_params
 if "stt_text" in params:
@@ -192,20 +219,23 @@ if "stt_text" in params:
     st.rerun()
 
 # ==================================================
-# ENTRADA MANUAL
+# ENTRADA MANUAL DE TEXTO
 # ==================================================
-col1, col2 = st.columns([5, 1])
-with col1:
-    user_input = st.text_input("", placeholder="Escribe un mensaje...", label_visibility="collapsed")
-with col2:
-    if st.button("ENVIAR") and user_input:
-        st.session_state.messages.append({"role": "user", "content": user_input})
-        with st.spinner("Tejiendo respuesta..."):
-            reply = call_groq(user_input)
-            st.session_state.messages.append({"role": "assistant", "content": reply})
-        st.rerun()
+with st.container():
+    col1, col2 = st.columns([5, 1])
+    with col1:
+        user_input = st.text_input("", placeholder="Escribe un mensaje...", key="manual_input", label_visibility="collapsed")
+    with col2:
+        send_btn = st.button("ENVIAR")
+
+if send_btn and user_input:
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    with st.spinner("Tejiendo respuesta..."):
+        reply = call_groq(user_input)
+        st.session_state.messages.append({"role": "assistant", "content": reply})
+    st.rerun()
 
 # ==================================================
-# ESTADO
+# INDICADOR DE ESTADO
 # ==================================================
 st.markdown('<div class="status-ok">🟢 Groq activo · MESH tejiendo respuestas</div>', unsafe_allow_html=True)
