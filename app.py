@@ -629,12 +629,17 @@ if voz_texto:
 st.markdown('<div class="titulo-principal">⬡ TOPOS URANOS · CENTRO DE COMANDO ⬡</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitulo">TERRA VIVE · TERRA SANA · TERRA ES</div>', unsafe_allow_html=True)
 
-# ── Aviso de claves faltantes
+# ── Diagnóstico de claves
 claves_faltantes = [k for k, v in AGENTES_DISPONIBLES.items() if not v]
+claves_ok        = [k for k, v in AGENTES_DISPONIBLES.items() if v]
+if claves_ok:
+    st.success(f"✅ Agentes activos: {', '.join(claves_ok)}")
 if claves_faltantes:
-    st.warning(f"⚠️ Agentes sin clave API (inactivos): {', '.join(claves_faltantes)}")
+    st.warning(f"⚠️ Sin clave (inactivos): {', '.join(claves_faltantes)}")
+if not any(AGENTES_DISPONIBLES.values()):
+    st.error("🚨 NINGUNA clave API detectada. Ve a Settings → Secrets en Streamlit Cloud.")
 if not MEMORIA_ACTIVA:
-    st.info("🧠 Memoria Supabase desactivada (SUPABASE_URL / SUPABASE_KEY no configuradas). La app funciona sin memoria persistente.")
+    st.info("🧠 Memoria Supabase desactivada. La app funciona sin ella.")
 
 # ── Barra de estado
 dest_color = AGENTE_CONFIG.get(st.session_state.destinatario, {}).get("color", "#ffffff")
@@ -700,27 +705,47 @@ with col_ctrl:
 
 
 with col_chat:
-    # ── Área de chat
-    chat_html = '<div id="chat-container" style="max-height:55vh;overflow-y:auto;padding:8px;">'
+    # ── Área de chat — renderizado con st.container por mensaje
+    chat_container = st.container(height=420, border=False)
     
-    if not st.session_state.historial:
-        chat_html += '<div style="text-align:center;color:#334;font-family:Orbitron,monospace;font-size:0.8em;padding:40px;">— EL MONOLITO AGUARDA —</div>'
-    
-    for msg in st.session_state.historial:
-        autor = msg["autor"]
-        cfg   = AGENTE_CONFIG.get(autor, {"clase": "msg-oraculo", "color": "#888888", "emoji": "●"})
-        ts    = msg.get("timestamp", "")
-        texto = msg["texto"].replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+    with chat_container:
+        if not st.session_state.historial:
+            st.markdown(
+                '<div style="text-align:center;color:#445566;font-family:Orbitron,monospace;'
+                'font-size:0.8em;padding:40px;">— EL MONOLITO AGUARDA —</div>',
+                unsafe_allow_html=True
+            )
         
-        chat_html += f"""
-        <div class="msg-bubble {cfg['clase']}">
-            <div class="msg-autor" style="color:{cfg['color']};">{cfg['emoji']} {autor} · {ts}</div>
-            <div>{texto}</div>
-        </div>
-        """
-    
-    chat_html += '</div>'
-    st.markdown(chat_html, unsafe_allow_html=True)
+        for msg in st.session_state.historial:
+            autor = msg["autor"]
+            cfg   = AGENTE_CONFIG.get(autor, {"clase": "msg-oraculo", "color": "#888888", "emoji": "●"})
+            ts    = msg.get("timestamp", "")
+            # Escapar HTML pero preservar saltos de línea
+            texto_safe = (
+                msg["texto"]
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\n", "<br>")
+            )
+            st.markdown(f"""
+<div style="
+    border-radius:10px;
+    padding:10px 14px;
+    margin:6px 0;
+    border-left:4px solid {cfg['color']};
+    background:rgba(10,10,32,0.85);
+    font-family:'Rajdhani',sans-serif;
+    font-size:1em;
+    line-height:1.6;
+">
+    <div style="font-family:'Orbitron',monospace;font-size:0.65em;
+                color:{cfg['color']};opacity:0.85;margin-bottom:4px;
+                letter-spacing:0.12em;">
+        {cfg['emoji']} {autor} · {ts}
+    </div>
+    <div style="color:#dde;">{texto_safe}</div>
+</div>""", unsafe_allow_html=True)
     
     # ── Indicador de typing (placeholder)
     typing_placeholder = st.empty()
