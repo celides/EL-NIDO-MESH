@@ -345,10 +345,9 @@ def leer_recuerdos(limite: int = 10) -> list:
 # ─────────────────────────────────────────────
 
 def llamar_deepseek(mensajes: list, system_prompt: str) -> str:
-    """Llama a la API de DeepSeek (TITÁN). En standby hasta recargar saldo."""
+    """Llama a la API de DeepSeek (TITÁN)."""
     if not DEEPSEEK_API_KEY:
         raise ValueError("DEEPSEEK_API_KEY no configurada")
-    raise ValueError("TITÁN en standby — recarga saldo en DeepSeek para activar")
     
     url = "https://api.deepseek.com/chat/completions"
     headers = {
@@ -373,7 +372,7 @@ def llamar_gemini(mensajes: list, system_prompt: str) -> str:
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY no configurada")
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
     
     # Gemini usa formato distinto: convertimos a su estructura
@@ -417,7 +416,7 @@ def llamar_groq(mensajes: list, system_prompt: str) -> str:
     }
     msgs = [{"role": "system", "content": system_prompt}] + mensajes
     payload = {
-        "model": "llama-3.1-8b-instant",
+        "model": "llama3-8b-8192",
         "messages": msgs,
         "max_tokens": 1500,
         "temperature": 0.7,
@@ -442,7 +441,7 @@ def llamar_openrouter(mensajes: list, system_prompt: str) -> str:
     }
     msgs = [{"role": "system", "content": system_prompt}] + mensajes
     payload = {
-        "model": "mistralai/mistral-7b-instruct:free",
+        "model": "meta-llama/llama-3-8b-instruct:free",
         "messages": msgs,
         "max_tokens": 1500,
         "temperature": 0.8,
@@ -458,7 +457,7 @@ def llamar_huggingface(mensajes: list, system_prompt: str) -> str:
     if not HF_API_KEY:
         raise ValueError("HF_API_KEY no configurada")
     
-    model = "HuggingFaceH4/zephyr-7b-beta"
+    model = "mistralai/Mistral-7B-Instruct-v0.3"
     url = f"https://api-inference.huggingface.co/models/{model}"
     headers = {
         "Authorization": f"Bearer {HF_API_KEY}",
@@ -630,17 +629,12 @@ if voz_texto:
 st.markdown('<div class="titulo-principal">⬡ TOPOS URANOS · CENTRO DE COMANDO ⬡</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitulo">TERRA VIVE · TERRA SANA · TERRA ES</div>', unsafe_allow_html=True)
 
-# ── Diagnóstico de claves
+# ── Aviso de claves faltantes
 claves_faltantes = [k for k, v in AGENTES_DISPONIBLES.items() if not v]
-claves_ok        = [k for k, v in AGENTES_DISPONIBLES.items() if v]
-if claves_ok:
-    st.success(f"✅ Agentes activos: {', '.join(claves_ok)}")
 if claves_faltantes:
-    st.warning(f"⚠️ Sin clave (inactivos): {', '.join(claves_faltantes)}")
-if not any(AGENTES_DISPONIBLES.values()):
-    st.error("🚨 NINGUNA clave API detectada. Ve a Settings → Secrets en Streamlit Cloud.")
+    st.warning(f"⚠️ Agentes sin clave API (inactivos): {', '.join(claves_faltantes)}")
 if not MEMORIA_ACTIVA:
-    st.info("🧠 Memoria Supabase desactivada. La app funciona sin ella.")
+    st.info("🧠 Memoria Supabase desactivada (SUPABASE_URL / SUPABASE_KEY no configuradas). La app funciona sin memoria persistente.")
 
 # ── Barra de estado
 dest_color = AGENTE_CONFIG.get(st.session_state.destinatario, {}).get("color", "#ffffff")
@@ -706,47 +700,27 @@ with col_ctrl:
 
 
 with col_chat:
-    # ── Área de chat — renderizado con st.container por mensaje
-    chat_container = st.container(height=420, border=False)
+    # ── Área de chat
+    chat_html = '<div id="chat-container" style="max-height:55vh;overflow-y:auto;padding:8px;">'
     
-    with chat_container:
-        if not st.session_state.historial:
-            st.markdown(
-                '<div style="text-align:center;color:#445566;font-family:Orbitron,monospace;'
-                'font-size:0.8em;padding:40px;">— EL MONOLITO AGUARDA —</div>',
-                unsafe_allow_html=True
-            )
+    if not st.session_state.historial:
+        chat_html += '<div style="text-align:center;color:#334;font-family:Orbitron,monospace;font-size:0.8em;padding:40px;">— EL MONOLITO AGUARDA —</div>'
+    
+    for msg in st.session_state.historial:
+        autor = msg["autor"]
+        cfg   = AGENTE_CONFIG.get(autor, {"clase": "msg-oraculo", "color": "#888888", "emoji": "●"})
+        ts    = msg.get("timestamp", "")
+        texto = msg["texto"].replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
         
-        for msg in st.session_state.historial:
-            autor = msg["autor"]
-            cfg   = AGENTE_CONFIG.get(autor, {"clase": "msg-oraculo", "color": "#888888", "emoji": "●"})
-            ts    = msg.get("timestamp", "")
-            # Escapar HTML pero preservar saltos de línea
-            texto_safe = (
-                msg["texto"]
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\n", "<br>")
-            )
-            st.markdown(f"""
-<div style="
-    border-radius:10px;
-    padding:10px 14px;
-    margin:6px 0;
-    border-left:4px solid {cfg['color']};
-    background:rgba(10,10,32,0.85);
-    font-family:'Rajdhani',sans-serif;
-    font-size:1em;
-    line-height:1.6;
-">
-    <div style="font-family:'Orbitron',monospace;font-size:0.65em;
-                color:{cfg['color']};opacity:0.85;margin-bottom:4px;
-                letter-spacing:0.12em;">
-        {cfg['emoji']} {autor} · {ts}
-    </div>
-    <div style="color:#dde;">{texto_safe}</div>
-</div>""", unsafe_allow_html=True)
+        chat_html += f"""
+        <div class="msg-bubble {cfg['clase']}">
+            <div class="msg-autor" style="color:{cfg['color']};">{cfg['emoji']} {autor} · {ts}</div>
+            <div>{texto}</div>
+        </div>
+        """
+    
+    chat_html += '</div>'
+    st.markdown(chat_html, unsafe_allow_html=True)
     
     # ── Indicador de typing (placeholder)
     typing_placeholder = st.empty()
@@ -885,95 +859,213 @@ ultima_resp_escaped = (
 manos_libres_js = "true" if st.session_state.manos_libres else "false"
 
 st.markdown(f"""
-
 <script>
-// ============================================
-// PTT para Streamlit (versión definitiva)
-// ============================================
-let recognition = null;
-let isRecording = false;
-let currentText = '';
-
-function startRecording() {
-    if (isRecording) return;
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-        alert("Tu navegador no soporta reconocimiento de voz. Usa Chrome.");
-        return;
-    }
-    recognition = new SpeechRecognition();
-    recognition.lang = 'es-ES';
-    recognition.continuous = false;
-    recognition.interimResults = false;
+(function() {{
+    // ── Configuración
+    const WAKE_WORD = "terra";
+    const SPEAKER   = "ORÁCULO";
+    let manoLibres  = {manos_libres_js};
     
-    recognition.onstart = () => {
-        isRecording = true;
-        document.getElementById('estado-grabacion').innerHTML = '🔴 Grabando... suelta el botón';
-        document.getElementById('btn-oraculo').style.background = '#ff3300';
-    };
-    recognition.onresult = (event) => {
-        currentText = event.results[0][0].transcript;
-        document.getElementById('estado-grabacion').innerHTML = '✅ Procesando: "' + currentText + '"';
-        stopRecordingAndSend();
-    };
-    recognition.onerror = (event) => {
-        document.getElementById('estado-grabacion').innerHTML = '❌ Error: ' + event.error;
-        isRecording = false;
-        document.getElementById('btn-oraculo').style.background = '';
-    };
-    recognition.start();
-}
+    // ── Estado de reconocimiento
+    let recognition   = null;
+    let grabando      = false;
+    let bufferTexto   = "";
+    let synth         = window.speechSynthesis;
+    let utterance     = null;
 
-function stopRecordingAndSend() {
-    if (recognition) {
-        recognition.stop();
-        recognition = null;
-    }
-    if (currentText) {
-        // Enviar mediante un formulario oculto que recarga la página (válido para Streamlit)
-        const form = document.createElement('form');
-        form.method = 'GET';
-        form.action = window.location.pathname;
-        const speakerInput = document.createElement('input');
-        speakerInput.name = 'speaker';
-        speakerInput.value = 'ORÁCULO';
-        const textInput = document.createElement('input');
-        textInput.name = 'text';
-        textInput.value = currentText;
-        form.appendChild(speakerInput);
-        form.appendChild(textInput);
-        document.body.appendChild(form);
-        form.submit();
-        currentText = '';
-    }
-    isRecording = false;
-    document.getElementById('estado-grabacion').innerHTML = '⚪ Listo. Presiona y habla.';
-    document.getElementById('btn-oraculo').style.background = '';
-}
+    // ── Síntesis de voz: leer la última respuesta si existe
+    const ultimaRespuesta = `{ultima_resp_escaped}`;
+    if (ultimaRespuesta.trim().length > 0) {{
+        setTimeout(() => {{
+            leerEnVoz(ultimaRespuesta);
+        }}, 800);
+    }}
 
-// Asignar eventos al botón
-window.onload = () => {
-    const btn = document.getElementById('btn-oraculo');
-    if (btn) {
-        btn.addEventListener('mousedown', startRecording);
-        btn.addEventListener('mouseup', stopRecordingAndSend);
-        btn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
-        btn.addEventListener('touchend', (e) => { e.preventDefault(); stopRecordingAndSend(); });
-    }
-    // Mensaje inicial
-    const estadoDiv = document.getElementById('estado-grabacion') || document.createElement('div');
-    if (!estadoDiv.id) {
-        const newDiv = document.createElement('div');
-        newDiv.id = 'estado-grabacion';
-        newDiv.style.textAlign = 'center';
-        newDiv.style.margin = '10px';
-        document.querySelector('.main-buttons').after(newDiv);
-    }
-    document.getElementById('estado-grabacion').innerHTML = '🎤 Mantén presionado ORÁCULO, habla y suelta.';
-};
-</script>
+    // ── Inicializar SpeechRecognition
+    function crearReconocimiento() {{
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SR) {{
+            document.getElementById("voz-status").textContent = "⚠ Voz no soportada en este navegador";
+            return null;
+        }}
+        const r = new SR();
+        r.lang = "es-ES";
+        r.continuous = true;
+        r.interimResults = true;
+        r.maxAlternatives = 1;
+        return r;
+    }}
+
+    // ── Leer texto en voz alta
+    function leerEnVoz(texto) {{
+        if (!synth) return;
+        synth.cancel();
+        utterance = new SpeechSynthesisUtterance(texto);
+        utterance.lang = "es-ES";
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
         
+        // Intentar usar voz en español si está disponible
+        const voces = synth.getVoices();
+        const vozES = voces.find(v => v.lang.startsWith("es"));
+        if (vozES) utterance.voice = vozES;
+        
+        document.getElementById("voz-status").textContent = "🔊 Hablando...";
+        utterance.onend = () => {{
+            document.getElementById("voz-status").textContent = "";
+        }};
+        synth.speak(utterance);
+    }}
 
+    // ── Detener voz (expuesto globalmente)
+    window.stopVoz = function() {{
+        if (synth) synth.cancel();
+        document.getElementById("voz-status").textContent = "⏹ Voz detenida";
+        setTimeout(() => {{
+            document.getElementById("voz-status").textContent = "";
+        }}, 1500);
+    }};
+
+    // ── Enviar texto al backend (vía URL params)
+    function enviarTexto(texto) {{
+        if (!texto || !texto.trim()) return;
+        const params = new URLSearchParams({{
+            speaker: SPEAKER,
+            text: texto.trim()
+        }});
+        document.getElementById("voz-status").textContent = "📡 Enviando...";
+        window.location.href = window.location.pathname + "?" + params.toString();
+    }}
+
+    // ── PTT: iniciar grabación
+    window.iniciarGrabacion = function() {{
+        if (grabando) return;
+        recognition = crearReconocimiento();
+        if (!recognition) return;
+        
+        grabando    = true;
+        bufferTexto = "";
+        document.getElementById("voz-status").textContent = "🔴 Grabando...";
+        document.getElementById("btn-ptt").style.borderColor = "#ff4444";
+        document.getElementById("btn-ptt").style.boxShadow  = "0 0 30px rgba(255,68,68,0.7)";
+
+        recognition.onresult = function(e) {{
+            let transcripcion = "";
+            for (let i = e.resultIndex; i < e.results.length; i++) {{
+                transcripcion += e.results[i][0].transcript;
+            }}
+            bufferTexto = transcripcion;
+            document.getElementById("voz-status").textContent = "🔴 " + transcripcion.slice(-60);
+        }};
+
+        recognition.onerror = function(e) {{
+            document.getElementById("voz-status").textContent = "⚠ Error: " + e.error;
+            grabando = false;
+        }};
+
+        try {{ recognition.start(); }} catch(e) {{}}
+    }};
+
+    // ── PTT: detener grabación y enviar
+    window.detenerGrabacion = function() {{
+        if (!grabando) return;
+        grabando = false;
+        document.getElementById("btn-ptt").style.borderColor = "#ff8800";
+        document.getElementById("btn-ptt").style.boxShadow  = "0 0 20px rgba(255,136,0,0.3)";
+        
+        if (recognition) {{
+            try {{ recognition.stop(); }} catch(e) {{}}
+        }}
+        
+        setTimeout(() => {{
+            if (bufferTexto.trim()) {{
+                enviarTexto(bufferTexto);
+            }} else {{
+                document.getElementById("voz-status").textContent = "⚠ Sin audio detectado";
+                setTimeout(() => {{
+                    document.getElementById("voz-status").textContent = "";
+                }}, 2000);
+            }}
+        }}, 400);
+    }};
+
+    // ── Modo manos libres (palabra clave "Terra")
+    if (manoLibres) {{
+        const recML = crearReconocimiento();
+        if (recML) {{
+            let acumulando = false;
+            let bufferML   = "";
+            let timerPausa = null;
+
+            recML.onresult = function(e) {{
+                for (let i = e.resultIndex; i < e.results.length; i++) {{
+                    const texto = e.results[i][0].transcript.toLowerCase().trim();
+                    
+                    if (texto.includes(WAKE_WORD)) {{
+                        // Activar o enviar lo acumulado
+                        if (acumulando && bufferML.trim()) {{
+                            clearTimeout(timerPausa);
+                            enviarTexto(bufferML.trim());
+                            acumulando = false;
+                            bufferML   = "";
+                        }} else {{
+                            acumulando = true;
+                            bufferML   = "";
+                            document.getElementById("voz-status").textContent = "👂 Escuchando...";
+                        }}
+                    }} else if (acumulando) {{
+                        bufferML += " " + e.results[i][0].transcript;
+                        document.getElementById("voz-status").textContent = "👂 " + bufferML.slice(-60);
+                        
+                        if (e.results[i].isFinal) {{
+                            clearTimeout(timerPausa);
+                            timerPausa = setTimeout(() => {{
+                                if (bufferML.trim()) {{
+                                    enviarTexto(bufferML.trim());
+                                    acumulando = false;
+                                    bufferML   = "";
+                                }}
+                            }}, 2000);
+                        }}
+                    }}
+                }}
+            }};
+
+            recML.onend = function() {{
+                // Reiniciar para escucha continua
+                setTimeout(() => {{
+                    try {{ recML.start(); }} catch(e) {{}}
+                }}, 300);
+            }};
+
+            recML.onerror = function(e) {{
+                if (e.error !== "no-speech") {{
+                    document.getElementById("voz-status").textContent = "⚠ Error ML: " + e.error;
+                }}
+                setTimeout(() => {{
+                    try {{ recML.start(); }} catch(e) {{}}
+                }}, 1000);
+            }};
+
+            document.getElementById("voz-status").textContent = "👂 Modo manos libres activo (di 'Terra')";
+            try {{ recML.start(); }} catch(e) {{}}
+        }}
+    }}
+
+    // ── Auto-scroll del chat al final
+    const chatContainer = document.getElementById("chat-container");
+    if (chatContainer) {{
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }}
+    
+    // ── Cargar voces (necesario en algunos navegadores)
+    if (synth && synth.onvoiceschanged !== undefined) {{
+        synth.onvoiceschanged = function() {{
+            synth.getVoices();
+        }};
+    }}
+}})();
+</script>
 """, unsafe_allow_html=True)
 
 
