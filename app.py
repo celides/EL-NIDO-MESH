@@ -1,6 +1,6 @@
 # ============================================================
 # TOPOS URANOS · CENTRO DE COMANDO
-# app.py — Versión con panel de control de agentes y diagnóstico
+# app.py — Versión completa para Streamlit Cloud
 # ============================================================
 
 # ─────────────────────────────────────────────
@@ -24,7 +24,7 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
-# 3. ESTILOS CSS (mismos que tenías, añado algunos para los toggles)
+# 3. ESTILOS CSS INCRUSTADOS
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -79,7 +79,7 @@ h1, h2, h3 {
     margin-bottom: 1.5em;
 }
 
-/* ── Mensajes del chat ── */
+/* ── Mensajes del chat (ahora seleccionables) ── */
 .msg-bubble {
     border-radius: 12px;
     padding: 12px 16px;
@@ -89,6 +89,7 @@ h1, h2, h3 {
     line-height: 1.6;
     border-left: 4px solid;
     background: rgba(10,10,32,0.8);
+    user-select: text;  /* <-- Permite seleccionar y copiar texto */
 }
 .msg-titan   { border-color: var(--titan-color);   color: #cce8ff; }
 .msg-aether  { border-color: var(--aether-color);  color: #e8ccff; }
@@ -296,9 +297,6 @@ if "estado_sistema" not in st.session_state:
 if "ultima_respuesta_voz" not in st.session_state:
     st.session_state.ultima_respuesta_voz = ""
 
-if "manos_libres" not in st.session_state:
-    st.session_state.manos_libres = False
-
 if "agentes_activos" not in st.session_state:
     # Cargar desde Supabase si es posible, sino usar valores por defecto
     st.session_state.agentes_activos = {}
@@ -496,6 +494,7 @@ def historial_a_mensajes(historial: list) -> list:
 
 def obtener_respuesta(pregunta: str, destinatario: str, historial: list, recuerdos_ctx: str = "") -> tuple[str, str]:
     """
+    Obtiene respuesta del agente destinatario con fallback global.
     Retorna (respuesta_texto, agente_que_respondio).
     También actualiza st.session_state.agentes_errores con el último fallo.
     """
@@ -671,9 +670,6 @@ with col_ctrl:
         mostrar_panel_agente(nombre, cfg)
     
     st.divider()
-    manos_libres = st.checkbox("🎙️ Modo manos libres", value=st.session_state.manos_libres,
-                               help='Di "Terra" para activar grabación continua')
-    st.session_state.manos_libres = manos_libres
     
     st.divider()
     if st.button("🗑️ Limpiar chat", use_container_width=True):
@@ -778,16 +774,13 @@ with st.expander("🧠 RECUERDOS DEL MONOLITO", expanded=False):
             """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# 12. JAVASCRIPT MEJORADO (voz con fetch sin recarga)
+# 12. JAVASCRIPT MEJORADO (voz sin recarga, con botón Topos Uranos)
 # ─────────────────────────────────────────────
 ultima_resp_escaped = st.session_state.ultima_respuesta_voz.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
-manos_libres_js = "true" if st.session_state.manos_libres else "false"
 
 st.markdown(f"""
 <script>
 (function() {{
-    const WAKE_WORD = "terra";
-    let manoLibres = {manos_libres_js};
     let recognition = null;
     let grabando = false;
     let bufferTexto = "";
@@ -823,15 +816,9 @@ st.markdown(f"""
     }};
     document.getElementById("stopVozBtn")?.addEventListener("click", window.stopVoz);
     
-    // Enviar texto al backend vía fetch (sin recargar la página)
-    async function enviarTexto(texto) {{
+    // Enviar texto al backend
+    function enviarTexto(texto) {{
         if (!texto.trim()) return;
-        const statusSpan = document.getElementById("voz-status");
-        if (statusSpan) statusSpan.textContent = "📡 Enviando...";
-        // Usamos POST a un endpoint /_stcore/stream? o directamente recargamos con query params?
-        // Streamlit no tiene endpoints POST fácil, pero podemos usar query params y recargar.
-        // Para evitar recarga, lo haríamos con st.query_params, pero eso igual recarga.
-        // Mantendremos el método de recarga suave: actualizar URL.
         const params = new URLSearchParams({{ speaker: "ORÁCULO", text: texto.trim() }});
         window.location.href = window.location.pathname + "?" + params.toString();
     }}
@@ -891,7 +878,6 @@ st.markdown(f"""
                 }}
             }}, 400);
         }});
-        // Para móvil: touchstart/touchend
         pttBtn.addEventListener("touchstart", (e) => {{
             e.preventDefault();
             pttBtn.dispatchEvent(new Event("mousedown"));
@@ -902,57 +888,74 @@ st.markdown(f"""
         }});
     }}
     
-    // Manos libres
-    if (manoLibres) {{
-        const recML = crearReconocimiento();
-        if (recML) {{
-            let acumulando = false;
-            let bufferML = "";
-            let timerPausa = null;
-            recML.onresult = (e) => {{
-                for (let i = e.resultIndex; i < e.results.length; i++) {{
-                    const texto = e.results[i][0].transcript.toLowerCase().trim();
-                    if (texto.includes(WAKE_WORD)) {{
-                        if (acumulando && bufferML.trim()) {{
-                            clearTimeout(timerPausa);
-                            enviarTexto(bufferML.trim());
-                            acumulando = false;
-                            bufferML = "";
-                        }} else {{
-                            acumulando = true;
-                            bufferML = "";
-                            const span = document.getElementById("voz-status");
-                            if (span) span.textContent = "👂 Escuchando...";
-                        }}
-                    }} else if (acumulando) {{
-                        bufferML += " " + e.results[i][0].transcript;
-                        const span = document.getElementById("voz-status");
-                        if (span) span.textContent = "👂 " + bufferML.slice(-60);
-                        if (e.results[i].isFinal) {{
-                            clearTimeout(timerPausa);
-                            timerPausa = setTimeout(() => {{
-                                if (bufferML.trim()) {{
-                                    enviarTexto(bufferML.trim());
-                                    acumulando = false;
-                                    bufferML = "";
-                                }}
-                            }}, 2000);
-                        }}
-                    }}
-                }}
-            }};
-            recML.onend = () => setTimeout(() => recML.start(), 300);
-            recML.onerror = (e) => {{
-                if (e.error !== "no-speech") {{
-                    const span = document.getElementById("voz-status");
-                    if (span) span.textContent = "⚠ Error ML: " + e.error;
-                }}
-                setTimeout(() => recML.start(), 1000);
-            }};
-            recML.start();
+    // Botón "🎙️ Topos Uranos"
+    const toposBtn = document.createElement("button");
+    toposBtn.innerHTML = "🎙️ Topos Uranos";
+    toposBtn.style.background = "linear-gradient(135deg,#0a0a20,#1a0a30)";
+    toposBtn.style.border = `2px solid #ff8800`;
+    toposBtn.style.borderRadius = "50px";
+    toposBtn.style.width = "200px";
+    toposBtn.style.height = "50px";
+    toposBtn.style.color = "#ff8800";
+    toposBtn.style.fontFamily = "Orbitron, monospace";
+    toposBtn.style.fontSize = "0.8em";
+    toposBtn.style.cursor = "pointer";
+    toposBtn.style.letterSpacing = "0.1em";
+    toposBtn.style.boxShadow = "0 0 20px rgba(255,136,0,0.3)";
+    toposBtn.style.margin = "10px auto";
+    toposBtn.style.display = "block";
+    
+    let grabandoTopos = false;
+    let recognitionTopos = null;
+    let bufferTopos = "";
+    
+    toposBtn.onclick = () => {{
+        if (grabandoTopos) return;
+        recognitionTopos = crearReconocimiento();
+        if (!recognitionTopos) return;
+        grabandoTopos = true;
+        bufferTopos = "";
+        const statusSpan = document.getElementById("voz-status");
+        if (statusSpan) statusSpan.textContent = "🎙️ Escuchando...";
+        toposBtn.style.borderColor = "#ff4444";
+        recognitionTopos.onresult = (e) => {{
+            let transcripcion = "";
+            for (let i = e.resultIndex; i < e.results.length; i++) {{
+                transcripcion += e.results[i][0].transcript;
+            }}
+            bufferTopos = transcripcion;
+            if (statusSpan) statusSpan.textContent = "🎙️ " + transcripcion.slice(-60);
+        }};
+        recognitionTopos.onend = () => {{
+            grabandoTopos = false;
+            toposBtn.style.borderColor = "#ff8800";
+            if (bufferTopos.trim()) {{
+                enviarTexto(bufferTopos);
+            }} else {{
+                const span = document.getElementById("voz-status");
+                if (span) span.textContent = "⚠ No se detectó audio";
+                setTimeout(() => {{ if (span) span.textContent = ""; }}, 2000);
+            }}
+        }};
+        recognitionTopos.onerror = (e) => {{
+            grabandoTopos = false;
+            toposBtn.style.borderColor = "#ff8800";
             const span = document.getElementById("voz-status");
-            if (span) span.textContent = "👂 Modo manos libres (di 'Terra')";
-        }}
+            if (span) span.textContent = "⚠ Error: " + e.error;
+        }};
+        recognitionTopos.start();
+        // Detener automáticamente después de 10 segundos
+        setTimeout(() => {{
+            if (grabandoTopos && recognitionTopos) {{
+                recognitionTopos.stop();
+            }}
+        }}, 10000);
+    }};
+    
+    // Insertar el botón después del PTT
+    const pttContainer = document.querySelector("div[style*='justify-content:center']");
+    if (pttContainer) {{
+        pttContainer.insertAdjacentElement("afterend", toposBtn);
     }}
     
     // Auto-scroll
