@@ -345,9 +345,10 @@ def leer_recuerdos(limite: int = 10) -> list:
 # ─────────────────────────────────────────────
 
 def llamar_deepseek(mensajes: list, system_prompt: str) -> str:
-    """Llama a la API de DeepSeek (TITÁN)."""
+    """Llama a la API de DeepSeek (TITÁN). En standby hasta recargar saldo."""
     if not DEEPSEEK_API_KEY:
         raise ValueError("DEEPSEEK_API_KEY no configurada")
+    raise ValueError("TITÁN en standby — recarga saldo en DeepSeek para activar")
     
     url = "https://api.deepseek.com/chat/completions"
     headers = {
@@ -372,7 +373,7 @@ def llamar_gemini(mensajes: list, system_prompt: str) -> str:
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY no configurada")
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
     
     # Gemini usa formato distinto: convertimos a su estructura
@@ -416,7 +417,7 @@ def llamar_groq(mensajes: list, system_prompt: str) -> str:
     }
     msgs = [{"role": "system", "content": system_prompt}] + mensajes
     payload = {
-        "model": "llama3-8b-8192",
+        "model": "llama-3.1-8b-instant",
         "messages": msgs,
         "max_tokens": 1500,
         "temperature": 0.7,
@@ -441,7 +442,7 @@ def llamar_openrouter(mensajes: list, system_prompt: str) -> str:
     }
     msgs = [{"role": "system", "content": system_prompt}] + mensajes
     payload = {
-        "model": "meta-llama/llama-3-8b-instruct:free",
+        "model": "mistralai/mistral-7b-instruct:free",
         "messages": msgs,
         "max_tokens": 1500,
         "temperature": 0.8,
@@ -457,7 +458,7 @@ def llamar_huggingface(mensajes: list, system_prompt: str) -> str:
     if not HF_API_KEY:
         raise ValueError("HF_API_KEY no configurada")
     
-    model = "mistralai/Mistral-7B-Instruct-v0.3"
+    model = "HuggingFaceH4/zephyr-7b-beta"
     url = f"https://api-inference.huggingface.co/models/{model}"
     headers = {
         "Authorization": f"Bearer {HF_API_KEY}",
