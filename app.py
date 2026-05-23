@@ -1,302 +1,219 @@
-# ============================================================
-# TOPOS URANOS · CENTRO DE COMANDO
-# app.py — Versión final con diagnóstico y toggles
-# ============================================================
-
 import streamlit as st
 import requests
 import json
 import datetime
-import time
 
-# ─────────────────────────────────────────────
-# CONFIGURACIÓN DE PÁGINA
-# ─────────────────────────────────────────────
-st.set_page_config(
-    page_title="TOPOS URANOS · CENTRO DE COMANDO",
-    page_icon="🌌",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
+st.set_page_config(page_title="TOPOS URANOS", layout="wide")
 
-# ─────────────────────────────────────────────
-# ESTILOS CSS (resumidos por brevedad, pero incluyen todo lo necesario)
-# ─────────────────────────────────────────────
+# ---------- ESTILOS ----------
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600&display=swap');
-html, body, [data-testid="stAppViewContainer"] { background: linear-gradient(135deg, #050510 0%, #0a0520 50%, #050510 100%) !important; color: #e0e0ff !important; font-family: 'Rajdhani', sans-serif !important; }
-.titulo-principal { font-family: 'Orbitron', monospace; font-size: 2.2em; font-weight: 900; text-align: center; background: linear-gradient(90deg, #00aaff, #aa44ff, #ff44cc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.2em; letter-spacing: 0.15em; }
-.subtitulo { font-family: 'Rajdhani', sans-serif; font-size: 1em; text-align: center; color: #5566aa; letter-spacing: 0.3em; margin-bottom: 1.5em; }
-.msg-bubble { border-radius: 12px; padding: 12px 16px; margin: 8px 0; font-family: 'Rajdhani', sans-serif; font-size: 1.05em; line-height: 1.6; border-left: 4px solid; background: rgba(10,10,32,0.8); user-select: text; }
-.msg-titan { border-color: #00aaff; } .msg-aether { border-color: #aa44ff; } .msg-velox { border-color: #00ff88; } .msg-codex { border-color: #aaaaaa; } .msg-nexus { border-color: #ff44cc; } .msg-oraculo { border-color: #ff8800; }
-.msg-autor { font-family: 'Orbitron', monospace; font-size: 0.7em; letter-spacing: 0.15em; opacity: 0.7; margin-bottom: 4px; }
-.status-bar { background: rgba(10,10,32,0.9); border: 1px solid #1a1a40; border-radius: 8px; padding: 8px 16px; font-family: 'Orbitron', monospace; font-size: 0.75em; display: flex; gap: 20px; flex-wrap: wrap; }
-.agente-panel { background: rgba(10,10,32,0.6); border-radius: 12px; padding: 8px 12px; margin-bottom: 12px; border-left: 3px solid; }
-.agente-diagnostico { font-size: 0.7em; margin-top: 4px; color: #aa88ff; }
-.diag-error { color: #ff8888; } .diag-ok { color: #88ff88; }
-.recuerdo-item { background: rgba(20,10,40,0.7); border-left: 3px solid #aa44ff; border-radius: 6px; padding: 8px 12px; margin: 6px 0; }
-.typing-indicator { font-family: 'Orbitron', monospace; font-size: 0.75em; color: #5566aa; animation: blink 1s infinite; }
-@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
-div[data-testid="stButton"] > button { font-family: 'Orbitron', monospace !important; border-radius: 8px !important; background: rgba(10,10,32,0.9) !important; color: #aaaacc !important; }
+.msg-bubble { border-radius: 12px; padding: 10px; margin: 8px 0; border-left: 4px solid; background: #0a0a20; user-select: text; }
+.msg-autor { font-family: monospace; font-size: 0.7em; opacity: 0.7; }
+.status-bar { background: #0a0a20; border-radius: 8px; padding: 8px; margin-bottom: 10px; font-family: monospace; }
+.agente-panel { background: #0a0a20; border-radius: 8px; padding: 8px; margin-bottom: 12px; border-left: 3px solid; }
+.diag-error { color: #ff8888; font-size: 0.7em; }
+.diag-ok { color: #88ff88; font-size: 0.7em; }
 </style>
 """, unsafe_allow_html=True)
 
-# ─────────────────────────────────────────────
-# LECTURA DE SECRETOS
-# ─────────────────────────────────────────────
-def get_secret(key: str, default=None):
+# ---------- LECTURA DE SECRETS ----------
+def get_secret(key):
     try:
         return st.secrets[key]
-    except (KeyError, FileNotFoundError):
-        return default
+    except:
+        return None
 
-DEEPSEEK_API_KEY    = get_secret("DEEPSEEK_API_KEY")
-GEMINI_API_KEY      = get_secret("GEMINI_API_KEY")
-GROQ_API_KEY        = get_secret("GROQ_API_KEY")
-OPENROUTER_API_KEY  = get_secret("OPENROUTER_API_KEY")
-HF_API_KEY          = get_secret("HF_API_KEY")
-SUPABASE_URL        = get_secret("SUPABASE_URL")
-SUPABASE_KEY        = get_secret("SUPABASE_KEY")
-
-MEMORIA_ACTIVA = SUPABASE_URL is not None and SUPABASE_KEY is not None
-
-# Configuración de agentes
-AGENTES = {
-    "TITÁN":   {"clave": DEEPSEEK_API_KEY,   "activo_por_defecto": False, "color": "#00aaff", "emoji": "🔵"},
-    "AETHER":  {"clave": GEMINI_API_KEY,     "activo_por_defecto": True,  "color": "#aa44ff", "emoji": "🟣"},
-    "VELOX":   {"clave": GROQ_API_KEY,       "activo_por_defecto": True,  "color": "#00ff88", "emoji": "🟢"},
-    "CÓDEX":   {"clave": OPENROUTER_API_KEY, "activo_por_defecto": True,  "color": "#aaaaaa", "emoji": "⚪"},
-    "NEXUS":   {"clave": HF_API_KEY,         "activo_por_defecto": True,  "color": "#ff44cc", "emoji": "🩷"},
+# Diccionario con todas las claves (None si no existen)
+CLAVES = {
+    "GEMINI": get_secret("GEMINI_API_KEY"),
+    "GROQ": get_secret("GROQ_API_KEY"),
+    "OPENROUTER": get_secret("OPENROUTER_API_KEY"),
+    "HF": get_secret("HF_API_KEY"),
+    "DEEPSEEK": get_secret("DEEPSEEK_API_KEY"),
 }
 
-# ─────────────────────────────────────────────
-# FUNCIONES DE SUPABASE (deben ir ANTES de usarlas)
-# ─────────────────────────────────────────────
-def guardar_recuerdo(contenido: str, metadatos: dict) -> bool:
-    if not MEMORIA_ACTIVA:
-        return False
-    try:
-        url = f"{SUPABASE_URL}/rest/v1/recuerdos"
-        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json", "Prefer": "return=minimal"}
-        payload = {"contenido": contenido, "metadatos": metadatos}
-        r = requests.post(url, headers=headers, json=payload, timeout=10)
-        return r.status_code in (200, 201)
-    except Exception:
-        return False
+# Mostrar diagnóstico de claves en la sidebar (sin mostrar el valor)
+st.sidebar.markdown("### 🔑 Estado de claves API")
+for nombre, clave in CLAVES.items():
+    estado = "✅" if clave else "❌"
+    st.sidebar.markdown(f"{estado} {nombre}")
 
-def leer_recuerdos(limite: int = 10) -> list:
-    if not MEMORIA_ACTIVA:
-        return []
+# ---------- FUNCIONES DE API (corregidas) ----------
+def llamar_gemini(prompt, system_prompt):
+    key = CLAVES["GEMINI"]
+    if not key:
+        return None, "❌ Clave Gemini no configurada"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [{
+            "role": "user",
+            "parts": [{"text": f"{system_prompt}\n\nUsuario: {prompt}"}]
+        }],
+        "generationConfig": {"maxOutputTokens": 1000, "temperature": 0.7}
+    }
     try:
-        url = f"{SUPABASE_URL}/rest/v1/recuerdos"
-        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-        params = {"order": "created_at.desc", "limit": limite}
-        r = requests.get(url, headers=headers, params=params, timeout=10)
-        return r.json() if r.status_code == 200 else []
-    except Exception:
-        return []
-
-def recuerdos_como_contexto(n: int = 5) -> str:
-    recs = st.session_state.get("recuerdos", [])
-    if not recs:
-        return ""
-    lineas = []
-    for r in recs[:n]:
-        meta = r.get("metadatos", {})
-        autor = meta.get("autor", "?")
-        ts = r.get("created_at", "")[:16] if r.get("created_at") else ""
-        lineas.append(f"[{ts}] {autor}: {r.get('contenido','')[:200]}")
-    return "\n".join(lineas)
-
-# ─────────────────────────────────────────────
-# FUNCIONES DE LLAMADA A API (simplificadas pero funcionales)
-# ─────────────────────────────────────────────
-def llamar_gemini(mensajes, system_prompt):
-    if not GEMINI_API_KEY:
-        return "", "Clave API no configurada"
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    contents = [{"role": "user", "parts": [{"text": f"[SISTEMA] {system_prompt}"}]}]
-    for msg in mensajes:
-        role = "user" if msg["role"] == "user" else "model"
-        contents.append({"role": role, "parts": [{"text": msg["content"]}]})
-    payload = {"contents": contents, "generationConfig": {"maxOutputTokens": 1500}}
-    try:
-        r = requests.post(url, json=payload, timeout=30)
+        r = requests.post(url, json=payload, headers=headers, timeout=30)
         if r.status_code == 200:
             data = r.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"].strip(), None
+            texto = data["candidates"][0]["content"]["parts"][0]["text"]
+            return texto, None
         else:
-            return "", f"Error {r.status_code}: {r.text[:100]}"
+            return None, f"Error {r.status_code}: {r.text[:100]}"
     except Exception as e:
-        return "", str(e)
+        return None, str(e)
 
-def llamar_groq(mensajes, system_prompt):
-    if not GROQ_API_KEY:
-        return "", "Clave API no configurada"
+def llamar_groq(prompt, system_prompt):
+    key = CLAVES["GROQ"]
+    if not key:
+        return None, "❌ Clave Groq no configurada"
     url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-    msgs = [{"role": "system", "content": system_prompt}] + mensajes
-    payload = {"model": "llama-3.1-8b-instant", "messages": msgs, "max_tokens": 1500}
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    payload = {
+        "model": "llama-3.1-8b-instant",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 1000
+    }
     try:
-        r = requests.post(url, headers=headers, json=payload, timeout=25)
+        r = requests.post(url, json=payload, headers=headers, timeout=30)
         if r.status_code == 200:
-            return r.json()["choices"][0]["message"]["content"].strip(), None
+            return r.json()["choices"][0]["message"]["content"], None
         else:
-            return "", f"Error {r.status_code}"
+            return None, f"Error {r.status_code}: {r.text[:100]}"
     except Exception as e:
-        return "", str(e)
+        return None, str(e)
 
-def llamar_openrouter(mensajes, system_prompt):
-    if not OPENROUTER_API_KEY:
-        return "", "Clave API no configurada"
+def llamar_openrouter(prompt, system_prompt):
+    key = CLAVES["OPENROUTER"]
+    if not key:
+        return None, "❌ Clave OpenRouter no configurada"
     url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"}
-    msgs = [{"role": "system", "content": system_prompt}] + mensajes
-    payload = {"model": "mistral-7b-instruct:free", "messages": msgs, "max_tokens": 1500}
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    payload = {
+        "model": "mistral-7b-instruct:free",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 1000
+    }
     try:
-        r = requests.post(url, headers=headers, json=payload, timeout=30)
+        r = requests.post(url, json=payload, headers=headers, timeout=30)
         if r.status_code == 200:
-            return r.json()["choices"][0]["message"]["content"].strip(), None
+            return r.json()["choices"][0]["message"]["content"], None
         else:
-            return "", f"Error {r.status_code}"
+            return None, f"Error {r.status_code}: {r.text[:100]}"
     except Exception as e:
-        return "", str(e)
+        return None, str(e)
 
-def llamar_huggingface(mensajes, system_prompt):
-    if not HF_API_KEY:
-        return "", "Clave API no configurada"
+def llamar_huggingface(prompt, system_prompt):
+    key = CLAVES["HF"]
+    if not key:
+        return None, "❌ Clave HuggingFace no configurada"
     url = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
-    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
-    prompt = f"<|system|>\n{system_prompt}\n<|user|>\n" + "\n".join([m["content"] for m in mensajes if m["role"]=="user"]) + "\n<|assistant|>\n"
+    headers = {"Authorization": f"Bearer {key}"}
+    full_prompt = f"<|system|>\n{system_prompt}\n<|user|>\n{prompt}\n<|assistant|>\n"
     try:
-        r = requests.post(url, headers=headers, json={"inputs": prompt, "parameters": {"max_new_tokens": 800}}, timeout=40)
+        r = requests.post(url, headers=headers, json={"inputs": full_prompt, "parameters": {"max_new_tokens": 800}}, timeout=40)
         if r.status_code == 200:
             data = r.json()
-            if isinstance(data, list) and len(data)>0:
+            if isinstance(data, list) and len(data) > 0:
                 return data[0].get("generated_text", "").strip(), None
             return str(data), None
         else:
-            return "", f"Error {r.status_code}"
+            return None, f"Error {r.status_code}: {r.text[:100]}"
     except Exception as e:
-        return "", str(e)
+        return None, str(e)
 
-# DeepSeek opcional (lo dejamos pero empieza apagado)
-def llamar_deepseek(mensajes, system_prompt):
-    if not DEEPSEEK_API_KEY:
-        return "", "Clave no configurada"
-    # Implementación omitida por brevedad, similar a las demás
-    return "", "DeepSeek no implementado en demo"
-
-API_FUNCS = {
-    "TITÁN": llamar_deepseek,
-    "AETHER": llamar_gemini,
-    "VELOX": llamar_groq,
-    "CÓDEX": llamar_openrouter,
-    "NEXUS": llamar_huggingface,
+# Mapeo de agentes a funciones
+AGENTES = {
+    "AETHER (Gemini)": llamar_gemini,
+    "VELOX (Groq)": llamar_groq,
+    "CÓDEX (OpenRouter)": llamar_openrouter,
+    "NEXUS (HuggingFace)": llamar_huggingface,
 }
 
-# ─────────────────────────────────────────────
-# INICIALIZACIÓN DE ESTADO (después de las funciones)
-# ─────────────────────────────────────────────
+# ---------- ESTADO DE SESIÓN ----------
 if "historial" not in st.session_state:
     st.session_state.historial = []
-if "destinatario" not in st.session_state:
-    st.session_state.destinatario = "AETHER"  # Cambiado a AETHER porque DeepSeek está apagado
-if "recuerdos" not in st.session_state:
-    st.session_state.recuerdos = leer_recuerdos(10) if MEMORIA_ACTIVA else []
-if "estado_sistema" not in st.session_state:
-    st.session_state.estado_sistema = "En espera"
-if "ultima_respuesta_voz" not in st.session_state:
-    st.session_state.ultima_respuesta_voz = ""
-if "agentes_activos" not in st.session_state:
-    st.session_state.agentes_activos = {nombre: cfg["activo_por_defecto"] for nombre, cfg in AGENTES.items()}
-if "agentes_errores" not in st.session_state:
-    st.session_state.agentes_errores = {nombre: None for nombre in AGENTES}
+if "agente_activo" not in st.session_state:
+    st.session_state.agente_activo = "AETHER (Gemini)"
+if "ultimo_error" not in st.session_state:
+    st.session_state.ultimo_error = None
 
-# ─────────────────────────────────────────────
-# FUNCIONES AUXILIARES
-# ─────────────────────────────────────────────
-def agregar_al_historial(autor, texto):
-    st.session_state.historial.append({"autor": autor, "texto": texto, "timestamp": datetime.datetime.now().strftime("%H:%M:%S")})
+# ---------- INTERFAZ ----------
+st.markdown('<div style="text-align:center; font-size:2em;">⬡ TOPOS URANOS ⬡</div>', unsafe_allow_html=True)
+st.markdown('<div style="text-align:center;">TERRA VIVE · TERRA SANA · TERRA ES</div>', unsafe_allow_html=True)
 
-def historial_a_mensajes(historial):
-    return [{"role": "user" if h["autor"]=="ORÁCULO" else "assistant", "content": h["texto"]} for h in historial]
-
-def obtener_respuesta(pregunta, destinatario, historial, recuerdos_ctx):
-    orden = []
-    if st.session_state.agentes_activos.get(destinatario, False):
-        orden.append(destinatario)
-    for agente in ["AETHER","VELOX","CÓDEX","NEXUS","TITÁN"]:
-        if agente != destinatario and st.session_state.agentes_activos.get(agente, False):
-            orden.append(agente)
-    msgs = historial_a_mensajes(historial)
-    msgs.append({"role": "user", "content": pregunta})
-    for agente in orden:
-        if not AGENTES[agente]["clave"]:
-            st.session_state.agentes_errores[agente] = "Clave API no configurada"
-            continue
-        sys_prompt = f"Eres {agente}, asistente del Monolito. Habla en español. {recuerdos_ctx}"
-        respuesta, error = API_FUNCS[agente](msgs, sys_prompt)
-        if error is None:
-            st.session_state.agentes_errores[agente] = None
-            return respuesta, agente
-        else:
-            st.session_state.agentes_errores[agente] = error
-    errores = [f"{a}: {st.session_state.agentes_errores[a]}" for a in orden if st.session_state.agentes_errores.get(a)]
-    return f"⚠️ No hay agentes disponibles.\nDiagnóstico:\n" + "\n".join(errores), "SISTEMA"
-
-# ─────────────────────────────────────────────
-# INTERFAZ PRINCIPAL
-# ─────────────────────────────────────────────
-st.markdown('<div class="titulo-principal">⬡ TOPOS URANOS · CENTRO DE COMANDO ⬡</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitulo">TERRA VIVE · TERRA SANA · TERRA ES</div>', unsafe_allow_html=True)
-
-# Barra de estado
-dest_color = AGENTES.get(st.session_state.destinatario, {}).get("color", "#fff")
-st.markdown(f"""
-<div class="status-bar">
-    <span>🟢 SISTEMA ACTIVO</span>
-    <span>📡 DESTINATARIO: {st.session_state.destinatario}</span>
-    <span>🧠 MEMORIA: {'ACTIVA' if MEMORIA_ACTIVA else 'OFFLINE'}</span>
-</div>
-""", unsafe_allow_html=True)
-
-col_chat, col_ctrl = st.columns([3,1])
-with col_ctrl:
-    st.markdown("### 🎛️ PANEL DE AGENTES")
-    for nombre, cfg in AGENTES.items():
-        activo = st.session_state.agentes_activos[nombre]
-        error = st.session_state.agentes_errores.get(nombre)
-        estado = "🟢 Activo" if activo and not error else ("🔴 Fallo" if activo and error else "⚫ Apagado")
-        st.markdown(f'<div class="agente-panel" style="border-left-color:{cfg["color"]}"><b>{cfg["emoji"]} {nombre}</b> {estado}</div>', unsafe_allow_html=True)
-        nuevo = st.checkbox("Encendido", value=activo, key=f"toggle_{nombre}")
-        if nuevo != activo:
-            st.session_state.agentes_activos[nombre] = nuevo
-            if nuevo:
-                st.session_state.agentes_errores[nombre] = None
-            st.rerun()
-        if error:
-            st.markdown(f'<div class="agente-diagnostico diag-error">⚠️ {error}</div>', unsafe_allow_html=True)
-        elif activo:
-            st.markdown('<div class="agente-diagnostico diag-ok">✅ Operativo</div>', unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-        if st.button(f"📡 Seleccionar {nombre}", key=f"sel_{nombre}"):
-            st.session_state.destinatario = nombre
-            st.rerun()
-    if st.button("🗑️ Limpiar chat"): st.session_state.historial = []; st.rerun()
-    if st.button("🔄 Reiniciar"): st.session_state.clear(); st.rerun()
-
-with col_chat:
+col1, col2 = st.columns([3,1])
+with col1:
+    # Mostrar historial
     for msg in st.session_state.historial:
-        cfg = AGENTES.get(msg["autor"], {"color":"#888","emoji":"●"})
-        st.markdown(f'<div class="msg-bubble" style="border-left-color:{cfg["color"]}"><div class="msg-autor">{cfg["emoji"]} {msg["autor"]} · {msg["timestamp"]}</div>{msg["texto"]}</div>', unsafe_allow_html=True)
-    with st.form("input_form"):
-        texto = st.text_input("Mensaje", placeholder="Escribe...", label_visibility="collapsed")
-        if st.form_submit_button("Enviar") and texto:
-            agregar_al_historial("ORÁCULO", texto)
-            ctx = recuerdos_como_contexto(5)
-            resp, agente = obtener_respuesta(texto, st.session_state.destinatario, st.session_state.historial[:-1], ctx)
-            agregar_al_historial(agente, resp)
-            st.session_state.estado_sistema = f"Respondido por {agente}"
-            st.rerun()
+        color = "#ff8800" if msg["autor"] == "ORÁCULO" else "#00aaff"
+        st.markdown(f"""
+        <div class="msg-bubble" style="border-left-color:{color}">
+            <div class="msg-autor">{msg["autor"]} · {msg["ts"]}</div>
+            {msg["texto"]}
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Entrada de texto
+    with st.form("chat_form"):
+        texto = st.text_input("Mensaje", placeholder="Escribe tu mensaje...", label_visibility="collapsed")
+        enviar = st.form_submit_button("⚡ ENVIAR")
+    
+    if enviar and texto:
+        st.session_state.historial.append({
+            "autor": "ORÁCULO",
+            "texto": texto,
+            "ts": datetime.datetime.now().strftime("%H:%M:%S")
+        })
+        agente_nombre = st.session_state.agente_activo
+        func = AGENTES[agente_nombre]
+        system_prompt = "Eres un asistente útil llamado Topos Uranos. Hablas español de forma poética pero clara. Ayudas a Juan Carlos Pérez."
+        with st.spinner(f"Consultando a {agente_nombre}..."):
+            respuesta, error = func(texto, system_prompt)
+        if error:
+            respuesta = f"⚠️ Error: {error}"
+            st.session_state.ultimo_error = error
+        else:
+            st.session_state.ultimo_error = None
+        st.session_state.historial.append({
+            "autor": agente_nombre,
+            "texto": respuesta,
+            "ts": datetime.datetime.now().strftime("%H:%M:%S")
+        })
+        st.rerun()
+
+with col2:
+    st.markdown("### 🎛️ Panel de control")
+    # Selector de agente
+    agente_seleccionado = st.radio(
+        "Agente activo",
+        list(AGENTES.keys()),
+        index=list(AGENTES.keys()).index(st.session_state.agente_activo)
+    )
+    if agente_seleccionado != st.session_state.agente_activo:
+        st.session_state.agente_activo = agente_seleccionado
+        st.rerun()
+    
+    # Mostrar diagnóstico del agente actual
+    st.markdown("---")
+    st.markdown("### 📡 Diagnóstico")
+    clave_presente = CLAVES[agente_seleccionado.split()[0]] is not None
+    if clave_presente:
+        st.markdown('<span class="diag-ok">✅ Clave presente</span>', unsafe_allow_html=True)
+    else:
+        st.markdown('<span class="diag-error">❌ Clave no configurada</span>', unsafe_allow_html=True)
+    
+    if st.session_state.ultimo_error:
+        st.markdown(f'<span class="diag-error">⚠️ Último error: {st.session_state.ultimo_error[:100]}</span>', unsafe_allow_html=True)
+    
+    st.markdown("---")
+    if st.button("🗑️ Limpiar chat"):
+        st.session_state.historial = []
+        st.rerun()
