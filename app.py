@@ -376,18 +376,22 @@ def llamar_gemini(mensajes, system_prompt):
     import time as _time
     for intento in range(3):
         r = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}",
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_API_KEY}",
             headers={"Content-Type":"application/json"},
             json={"contents": contents, "generationConfig":{"maxOutputTokens":1500,"temperature":0.85}},
             timeout=30,
         )
         if r.status_code == 429:
             if intento < 2:
-                _time.sleep(12)  # espera 12 segundos y reintenta
+                _time.sleep(12)
                 continue
-        r.raise_for_status()
-        return r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-    r.raise_for_status()
+        if not r.ok:
+            raise ValueError(f"Error {r.status_code}: {r.text[:200]}")
+        data = r.json()
+        if "candidates" not in data:
+            raise ValueError(f"Respuesta inesperada: {str(data)[:200]}")
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    raise ValueError("Gemini no respondió tras 3 intentos")
 
 def llamar_groq(mensajes, system_prompt):
     if not GROQ_API_KEY:
